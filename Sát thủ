@@ -1,39 +1,81 @@
--- =================================================================
--- [ NHẬT HUB V9 ] - COSMIC UI + FULL LOGIC WORK
--- Giao diện: Giữ nguyên 100% bản thiết kế Cosmic gốc của bạn
--- Chức năng: Đã fix lỗi, nối dây toàn bộ logic hack thực tế vào UI
--- =================================================================
-
-local Players = game:GetService("Players")
-local CoreGui = game:GetService("CoreGui") 
-local TweenService = game:GetService("TweenService")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local VirtualUser = game:GetService("VirtualUser")
-local LocalPlayer = Players.LocalPlayer
-
--- BẢNG CÀI ĐẶT TRẠNG THÁI (LƯU DỮ LIỆU KHI BẬT/TẮT)
-local Settings = {
-    ESP = false,
-    Hitbox = true, -- Mặc định bật theo UI gốc của bạn
-    SpeedHack = false,
-    SpeedValue = 150,
-    AutoKillV1 = true, 
-    FastKillV2 = false,
-    KillRange = 70,
-    HeightOffset = 4,
-    AttackSpam = 10
-}
-
-if CoreGui:FindFirstChild("NhatHub_CosmicUI") then
-    CoreGui:FindFirstChild("NhatHub_CosmicUI"):Destroy()
-end
-
--- ===================== TẠO NỀN TẢNG (SCREEN GUI) =====================
+-- Khởi tạo ScreenGui
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "NhatHub_CosmicUI"
-ScreenGui.ResetOnSpawn = false
-local success, err = pcall(function() ScreenGui.Parent = CoreGui end)
+local MainFrame = Instance.new("Frame")
+local Title = Instance.new("TextLabel")
+local Subtitle = Instance.new("TextLabel")
+local UIGradient = Instance.new("UIGradient")
+
+-- Cấu hình ScreenGui
+ScreenGui.Name = "ShutdownOverlay"
+ScreenGui.Parent = game:GetService("CoreGui") -- Chạy trên CoreGui để che phủ hoàn toàn
+ScreenGui.DisplayOrder = 999
+ScreenGui.IgnoreGuiInset = true -- Đảm bảo che cả thanh topbar
+
+-- Cấu hình Bảng che phủ (MainFrame)
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+MainFrame.BackgroundTransparency = 1 -- Bắt đầu bằng độ trong suốt để làm hiệu ứng Fade-in
+MainFrame.Size = UDim2.new(1, 0, 1, 0)
+MainFrame.ZIndex = 1
+
+-- Hiệu ứng Gradient cho nền
+UIGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 20, 20)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
+}
+UIGradient.Rotation = 45
+UIGradient.Parent = MainFrame
+
+-- Cấu hình Chữ chính (Script đã đóng)
+Title.Name = "Title"
+Title.Parent = MainFrame
+Title.BackgroundTransparency = 1
+Title.Position = UDim2.new(0.5, 0, 0.45, 0)
+Title.Size = UDim2.new(0.8, 0, 0.1, 0)
+Title.AnchorPoint = Vector2.new(0.5, 0.5)
+Title.Font = Enum.Font.GothamBold
+Title.Text = "SCRIPT ĐÃ ĐÓNG"
+Title.TextColor3 = Color3.fromRGB(255, 50, 50)
+Title.TextSize = 50
+Title.TextScaled = true
+Title.TextTransparency = 1
+
+-- Cấu hình Chữ phụ (ID Anh Nhật)
+Subtitle.Name = "Subtitle"
+Subtitle.Parent = MainFrame
+Subtitle.BackgroundTransparency = 1
+Subtitle.Position = UDim2.new(0.5, 0, 0.55, 0)
+Subtitle.Size = UDim2.new(0.8, 0, 0.05, 0)
+Subtitle.AnchorPoint = Vector2.new(0.5, 0.5)
+Subtitle.Font = Enum.Font.GothamSemibold
+Subtitle.Text = "Muốn nhận script mới thì ID Anh Nhật đẹp zai nhé"
+Subtitle.TextColor3 = Color3.fromRGB(200, 200, 200)
+Subtitle.TextSize = 20
+Subtitle.TextTransparency = 1
+
+-- Hiệu ứng hoạt ảnh (Animation Logic)
+local TweenService = game:GetService("TweenService")
+local info = TweenInfo.new(1.5, Enum.EasingStyle.Quart, Enum.EasingDirection.Out)
+
+-- Thực hiện hiện hình (Fade-in)
+TweenService:Create(MainFrame, info, {BackgroundTransparency = 0}):Play()
+task.wait(0.5)
+TweenService:Create(Title, info, {TextTransparency = 0, Position = UDim2.new(0.5, 0, 0.5, 0)}):Play()
+task.wait(0.3)
+TweenService:Create(Subtitle, info, {TextTransparency = 0}):Play()
+
+-- Hiệu ứng chữ đập nhẹ (Pulse Effect)
+spawn(function()
+    while true do
+        local pulse = TweenService:Create(Title, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {TextSize = 55})
+        pulse:Play()
+        pulse.Completed:Wait()
+        local shrink = TweenService:Create(Title, TweenInfo.new(1, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {TextSize = 50})
+        shrink:Play()
+        shrink.Completed:Wait()
+    end
+end)
 if not success then ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
 
 -- Thư mục chứa ESP
