@@ -1,39 +1,164 @@
--- Khởi tạo ScreenGui
-local ScreenGui = Instance.new("ScreenGui")
-local MainFrame = Instance.new("Frame")
-local Title = Instance.new("TextLabel")
-local Subtitle = Instance.new("TextLabel")
-local UIGradient = Instance.new("UIGradient")
+-- [[ NHẬT HUB V16 - THUNDERBOLT ELITE ]]
+-- Creator: Nguyễn Văn Nhật
+-- Update: Đưa Auto Click ra góc phải màn hình
 
--- Cấu hình ScreenGui
-ScreenGui.Name = "ShutdownOverlay"
-ScreenGui.Parent = game:GetService("CoreGui") -- Chạy trên CoreGui để che phủ hoàn toàn
-ScreenGui.DisplayOrder = 999
-ScreenGui.IgnoreGuiInset = true -- Đảm bảo che cả thanh topbar
+local Players = game:GetService("Players")
+local CoreGui = game:GetService("CoreGui") 
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
+local TeleportService = game:GetService("TeleportService")
+local LocalPlayer = Players.LocalPlayer
 
--- Cấu hình Bảng che phủ (MainFrame)
-MainFrame.Name = "MainFrame"
-MainFrame.Parent = ScreenGui
-MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-MainFrame.BackgroundTransparency = 1 -- Bắt đầu bằng độ trong suốt để làm hiệu ứng Fade-in
-MainFrame.Size = UDim2.new(1, 0, 1, 0)
-MainFrame.ZIndex = 1
-
--- Hiệu ứng Gradient cho nền
-UIGradient.Color = ColorSequence.new{
-    ColorSequenceKeypoint.new(0, Color3.fromRGB(20, 20, 20)),
-    ColorSequenceKeypoint.new(1, Color3.fromRGB(0, 0, 0))
+local Settings = {
+    ESP = false,
+    Hitbox = true,
+    SpeedHack = false,
+    SpeedValue = 150,
+    AutoKillV1 = true, 
+    FastKillV2 = false,
+    AutoClick = false,
+    KillRange = 70,
+    HeightOffset = 4,
+    AttackSpam = 10
 }
-UIGradient.Rotation = 45
-UIGradient.Parent = MainFrame
 
--- Cấu hình Chữ chính (Script đã đóng)
-Title.Name = "Title"
-Title.Parent = MainFrame
-Title.BackgroundTransparency = 1
-Title.Position = UDim2.new(0.5, 0, 0.45, 0)
-Title.Size = UDim2.new(0.8, 0, 0.1, 0)
-Title.AnchorPoint = Vector2.new(0.5, 0.5)
+if CoreGui:FindFirstChild("NhatHub_V16") then CoreGui:FindFirstChild("NhatHub_V16"):Destroy() end
+
+local ScreenGui = Instance.new("ScreenGui", CoreGui)
+ScreenGui.Name = "NhatHubv2"
+ScreenGui.IgnoreGuiInset = true
+
+-- ===================== HIỆU ỨNG TIA CHỚP (LIGHTNING) =====================
+local function StrikeLightning(frame, stroke)
+    task.spawn(function()
+        while frame.Parent do
+            task.wait(math.random(1, 4))
+            local flashInfo = TweenInfo.new(0.05, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true)
+            TweenService:Create(frame, flashInfo, {BackgroundColor3 = Color3.fromRGB(150, 230, 255), BackgroundTransparency = 0.5}):Play()
+            TweenService:Create(stroke, flashInfo, {Color = Color3.fromRGB(255, 255, 255), Thickness = 3.5}):Play()
+        end
+    end)
+end
+
+-- ===================== AUTO CLICK WIDGET (GÓC PHẢI) =====================
+local ClickWidget = Instance.new("Frame", ScreenGui)
+ClickWidget.Size = UDim2.new(0, 120, 0, 50)
+ClickWidget.Position = UDim2.new(1, -135, 0, 50) -- Góc phải màn hình
+ClickWidget.BackgroundColor3 = Color3.fromRGB(10, 10, 20)
+ClickWidget.BackgroundTransparency = 0.2
+Instance.new("UICorner", ClickWidget).CornerRadius = UDim.new(0, 10)
+
+local ClickStroke = Instance.new("UIStroke", ClickWidget)
+ClickStroke.Color = Color3.fromRGB(255, 200, 0); ClickStroke.Thickness = 2
+StrikeLightning(ClickWidget, ClickStroke)
+
+local ClickBtn = Instance.new("TextButton", ClickWidget)
+ClickBtn.Size = UDim2.new(1, 0, 1, 0); ClickBtn.BackgroundTransparency = 1
+ClickBtn.Text = "AUTO CLICK: OFF"; ClickBtn.TextColor3 = Color3.fromRGB(255, 50, 50)
+ClickBtn.Font = Enum.Font.GothamBlack; ClickBtn.TextSize = 12
+
+ClickBtn.MouseButton1Click:Connect(function()
+    Settings.AutoClick = not Settings.AutoClick
+    if Settings.AutoClick then
+        ClickBtn.Text = "AUTO CLICK: ON"
+        ClickBtn.TextColor3 = Color3.fromRGB(0, 255, 100)
+        ClickStroke.Color = Color3.fromRGB(0, 255, 100)
+    else
+        ClickBtn.Text = "AUTO CLICK: OFF"
+        ClickBtn.TextColor3 = Color3.fromRGB(255, 50, 50)
+        ClickStroke.Color = Color3.fromRGB(255, 200, 0)
+    end
+end)
+
+-- ===================== GIAO DIỆN CHÍNH (MENU) =====================
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.Size = UDim2.new(0, 560, 0, 360)
+MainFrame.Position = UDim2.new(0.5, -280, 0.5, -180)
+MainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
+MainFrame.Visible = false
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 15)
+local MainStroke = Instance.new("UIStroke", MainFrame); MainStroke.Thickness = 1.5; MainStroke.Color = Color3.fromRGB(0, 180, 255)
+StrikeLightning(MainFrame, MainStroke)
+
+-- Sidebar Profile (Nguyễn Văn Nhật)
+local SideBar = Instance.new("Frame", MainFrame)
+SideBar.Size = UDim2.new(0, 170, 1, 0); SideBar.BackgroundColor3 = Color3.fromRGB(5, 8, 15); Instance.new("UICorner", SideBar)
+local NameLabel = Instance.new("TextLabel", SideBar)
+NameLabel.Position = UDim2.new(0, 0, 0, 85); NameLabel.Size = UDim2.new(1, 0, 0, 25); NameLabel.Text = "Nguyễn Văn Nhật"; NameLabel.TextColor3 = Color3.fromRGB(255, 255, 255); NameLabel.Font = Enum.Font.GothamBlack; NameLabel.TextSize = 16; NameLabel.BackgroundTransparency = 1
+Instance.new("UIStroke", NameLabel).Color = Color3.fromRGB(0, 200, 255)
+
+local ServerBtn = Instance.new("TextButton", SideBar)
+ServerBtn.Position = UDim2.new(0.5, -70, 0, 140); ServerBtn.Size = UDim2.new(0, 140, 0, 35); ServerBtn.Text = "🌀 ĐỔI SERVER"; ServerBtn.BackgroundColor3 = Color3.fromRGB(20, 30, 50); ServerBtn.TextColor3 = Color3.fromRGB(0, 255, 255); Instance.new("UICorner", ServerBtn)
+
+ServerBtn.MouseButton1Click:Connect(function()
+    local Servers = game.HttpService:JSONDecode(game:HttpGet("https://games.roblox.com/v1/games/"..game.PlaceId.."/servers/Public?sortOrder=Asc&limit=100"))
+    for _, s in pairs(Servers.data) do if s.playing < s.maxPlayers and s.id ~= game.JobId then TeleportService:TeleportToPlaceInstance(game.PlaceId, s.id, LocalPlayer) break end end
+end)
+
+-- Container Chức năng
+local Container = Instance.new("ScrollingFrame", MainFrame)
+Container.Position = UDim2.new(0, 180, 0, 15); Container.Size = UDim2.new(1, -190, 1, -30); Container.BackgroundTransparency = 1; Container.CanvasSize = UDim2.new(0, 0, 1.5, 0); Container.ScrollBarThickness = 0
+Instance.new("UIListLayout", Container).Padding = UDim.new(0, 10)
+
+local function NewToggle(text, settingKey, color)
+    local Frame = Instance.new("TextButton", Container); Frame.Size = UDim2.new(1, -5, 0, 50); Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 30); Frame.Text = ""; Instance.new("UICorner", Frame)
+    local Label = Instance.new("TextLabel", Frame); Label.Position = UDim2.new(0, 15, 0, 0); Label.Size = UDim2.new(1, -60, 1, 0); Label.Text = text; Label.TextColor3 = Color3.fromRGB(255, 255, 255); Label.Font = Enum.Font.GothamBold; Label.TextSize = 13; Label.TextXAlignment = Enum.TextXAlignment.Left; Label.BackgroundTransparency = 1
+    local Box = Instance.new("Frame", Frame); Box.Position = UDim2.new(1, -50, 0.5, -11); Box.Size = UDim2.new(0, 38, 0, 22); Box.BackgroundColor3 = Color3.fromRGB(30, 30, 40); Instance.new("UICorner", Box).CornerRadius = UDim.new(1, 0)
+    local Ind = Instance.new("Frame", Box); Ind.Position = UDim2.new(0, 4, 0.5, -7); Ind.Size = UDim2.new(0, 14, 0, 14); Ind.BackgroundColor3 = Color3.fromRGB(255, 255, 255); Instance.new("UICorner", Ind).CornerRadius = UDim.new(1, 0)
+    local function Update()
+        TweenService:Create(Box, TweenInfo.new(0.2), {BackgroundColor3 = Settings[settingKey] and color or Color3.fromRGB(30, 30, 40)}):Play()
+        TweenService:Create(Ind, TweenInfo.new(0.2), {Position = Settings[settingKey] and UDim2.new(1, -18, 0.5, -7) or UDim2.new(0, 4, 0.5, -7)}):Play()
+    end
+    Frame.MouseButton1Click:Connect(function() Settings[settingKey] = not Settings[settingKey]; Update() end); Update()
+end
+
+local function NewSlider(text, min, max, default)
+    local Frame = Instance.new("Frame", Container); Frame.Size = UDim2.new(1, -5, 0, 65); Frame.BackgroundColor3 = Color3.fromRGB(20, 20, 30); Instance.new("UICorner", Frame)
+    local Label = Instance.new("TextLabel", Frame); Label.Position = UDim2.new(0, 15, 0, 10); Label.Text = text .. ": " .. default; Label.TextColor3 = Color3.fromRGB(0, 255, 255); Label.Font = Enum.Font.GothamBold; Label.TextSize = 13; Label.BackgroundTransparency = 1; Label.TextXAlignment = Enum.TextXAlignment.Left
+    local SB = Instance.new("Frame", Frame); SB.Position = UDim2.new(0.5, -110, 0, 40); SB.Size = UDim2.new(0, 220, 0, 6); SB.BackgroundColor3 = Color3.fromRGB(10, 10, 15); Instance.new("UICorner", SB)
+    local SF = Instance.new("Frame", SB); SF.Size = UDim2.new((default-min)/(max-min), 0, 1, 0); SF.BackgroundColor3 = Color3.fromRGB(255, 255, 255); Instance.new("UICorner", SF)
+    local Dr = Instance.new("TextButton", SB); Dr.Position = UDim2.new((default-min)/(max-min), -8, 0.5, -8); Dr.Size = UDim2.new(0, 16, 0, 16); Dr.BackgroundColor3 = Color3.fromRGB(0, 200, 255); Dr.Text = ""; Instance.new("UICorner", Dr).CornerRadius = UDim.new(1, 0)
+    local dragging = false
+    Dr.MouseButton1Down:Connect(function() dragging = true end)
+    UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then dragging = false end end)
+    RunService.RenderStepped:Connect(function() if dragging then local pos = math.clamp((UserInputService:GetMouseLocation().X - SB.AbsolutePosition.X) / SB.AbsoluteSize.X, 0, 1); Dr.Position = UDim2.new(pos, -8, 0.5, -8); SF.Size = UDim2.new(pos, 0, 1, 0); local val = math.floor(min + (pos * (max - min))); Settings.SpeedValue = val; Label.Text = text .. ": " .. val end end)
+end
+
+NewToggle("⚡ CHỚP TỨC THỜI (ESP)", "ESP", Color3.fromRGB(255, 255, 255))
+NewToggle("💥 XUNG KÍCH 150 (HITBOX)", "Hitbox", Color3.fromRGB(255, 50, 50))
+NewToggle("🏃 TỐC ĐỘ TIA CHỚP", "SpeedHack", Color3.fromRGB(0, 255, 255))
+NewSlider("CƯỜNG ĐỘ DÒNG ĐIỆN", 16, 500, 150)
+NewToggle("🌩️ THIÊN ĐỊNH V1", "AutoKillV1", Color3.fromRGB(150, 100, 255))
+NewToggle("👹 THIÊN ĐỊNH V2 (NHANH)", "FastKillV2", Color3.fromRGB(255, 0, 0))
+
+-- Nút Bật/Tắt Menu Chính
+local ToggleBtn = Instance.new("ImageButton", ScreenGui); ToggleBtn.Size = UDim2.new(0, 50, 0, 50); ToggleBtn.Position = UDim2.new(0, 20, 0.5, -25); ToggleBtn.BackgroundColor3 = Color3.fromRGB(10, 10, 20); ToggleBtn.Image = "rbxassetid://10816902434"; ToggleBtn.ImageColor3 = Color3.fromRGB(255, 255, 255); Instance.new("UICorner", ToggleBtn)
+ToggleBtn.MouseButton1Click:Connect(function() MainFrame.Visible = not MainFrame.Visible if MainFrame.Visible then MainFrame:TweenSize(UDim2.new(0, 560, 0, 360), "Out", "Back", 0.4, true) end end)
+
+-- ===================== LOGIC AUTO CLICK & GAMEPLAY =====================
+task.spawn(function() while true do if Settings.AutoClick then VirtualUser:Button1Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame); VirtualUser:Button1Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame) end task.wait(0.1) end end)
+
+local ESP_Folder = Instance.new("Folder", ScreenGui); local Boxes = {}
+RunService.RenderStepped:Connect(function()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then LocalPlayer.Character.Humanoid.WalkSpeed = Settings.SpeedHack and Settings.SpeedValue or 16 end
+    if Settings.FastKillV2 and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        local target = nil; local minDist = Settings.KillRange
+        for _, p in pairs(Players:GetPlayers()) do if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character.Humanoid.Health > 0 then local dist = (LocalPlayer.Character.HumanoidRootPart.Position - p.Character.HumanoidRootPart.Position).Magnitude; if dist < minDist then minDist = dist; target = p.Character.HumanoidRootPart end end end
+        if target then LocalPlayer.Character:PivotTo(target.CFrame * CFrame.new(0, Settings.HeightOffset, 0)); for i = 1, Settings.AttackSpam do VirtualUser:Button1Down(Vector2.new(0,0), workspace.CurrentCamera.CFrame); VirtualUser:Button1Up(Vector2.new(0,0), workspace.CurrentCamera.CFrame) end end
+    end
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local hrp = p.Character.HumanoidRootPart
+            if Settings.ESP and p.Character.Humanoid.Health > 0 then
+                if not Boxes[p] then local b = Instance.new("BoxHandleAdornment", ESP_Folder); b.Size = Vector3.new(4, 6, 4); b.Color3 = Color3.fromRGB(255, 255, 255); b.AlwaysOnTop = true; Boxes[p] = b end
+                Boxes[p].Adornee = hrp
+            elseif Boxes[p] then Boxes[p].Adornee = nil end
+            hrp.Size = Settings.Hitbox and Vector3.new(150, 150, 150) or Vector3.new(2, 2, 1); hrp.Transparency = Settings.Hitbox and 0.8 or 0; hrp.CanCollide = not Settings.Hitbox
+        end
+    end
+end)
 Title.Font = Enum.Font.GothamBold
 Title.Text = "SCRIPT ĐÃ ĐÓNG"
 Title.TextColor3 = Color3.fromRGB(255, 50, 50)
