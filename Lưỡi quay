@@ -1,0 +1,135 @@
+--[[ 
+    NHAT HUB
+    Key: NHATHUBKEY_277272
+    Link: https://loot-link.com/s?E7uDBNda
+]]
+
+local CorrectKey = "NHATHUBKEY_277272"
+local KeyLink = "https://loot-link.com/s?E7uDBNda"
+local FileName = "NhatHub_KeyAuth.txt" -- Tên file lưu key trong bộ nhớ máy
+
+-- Hàm thực thi script chính
+local function LoadMainScript()
+    print("Đang tải không gian BladeSpin...")
+    loadstring(game:HttpGet("https://raw.githubusercontent.com/gumanba/Scripts/main/BladeSpin"))()
+end
+
+-- KIỂM TRA AUTO KEY KHI VỪA MỞ SCRIPT
+if isfile(FileName) then
+    local SavedKey = readfile(FileName)
+    if SavedKey == CorrectKey then
+        -- Nếu key lưu trong máy vẫn đúng, vào thẳng script luôn
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = "NHAT HUB",
+            Text = "Đã tự động xác thực mã vũ trụ!",
+            Duration = 5
+        })
+        LoadMainScript()
+        return -- Dừng đoạn code bên dưới, không hiện UI nhập key nữa
+    end
+end
+
+-- NẾU CHƯA CÓ KEY HOẶC KEY SAI, HIỆN GIAO DIỆN (UI) NHƯ CŨ
+local ScreenGui = Instance.new("ScreenGui")
+local MainFrame = Instance.new("Frame")
+local UICorner = Instance.new("UICorner")
+local UIGradient = Instance.new("UIGradient")
+local Title = Instance.new("TextLabel")
+local KeyInput = Instance.new("TextBox")
+local CheckBtn = Instance.new("TextButton")
+local GetKeyBtn = Instance.new("TextButton")
+
+ScreenGui.Name = "NhatHub_AutoKeyUI"
+ScreenGui.Parent = game:GetService("CoreGui")
+
+MainFrame.Name = "MainFrame"
+MainFrame.Parent = ScreenGui
+MainFrame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+MainFrame.Position = UDim2.new(0.5, -135, 0.5, -90)
+MainFrame.Size = UDim2.new(0, 270, 0, 180)
+MainFrame.Active = true
+MainFrame.Draggable = true
+
+UICorner.CornerRadius = UDim.new(0, 15)
+UICorner.Parent = MainFrame
+
+UIGradient.Color = ColorSequence.new{
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(10, 5, 25)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(40, 30, 90))
+}
+UIGradient.Rotation = 45
+UIGradient.Parent = MainFrame
+
+Title.Parent = MainFrame
+Title.BackgroundTransparency = 1
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.Font = Enum.Font.GothamBold
+Title.Text = "NHAT HUB - AUTO AUTH"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 18
+
+KeyInput.Parent = MainFrame
+KeyInput.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+KeyInput.BackgroundTransparency = 0.9
+KeyInput.Position = UDim2.new(0.1, 0, 0.35, 0)
+KeyInput.Size = UDim2.new(0.8, 0, 0, 35)
+KeyInput.Font = Enum.Font.Gotham
+KeyInput.PlaceholderText = "Dán mã vào đây..."
+KeyInput.Text = ""
+KeyInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+KeyInput.TextSize = 14
+
+local KeyCorner = Instance.new("UICorner")
+KeyCorner.CornerRadius = UDim.new(0, 8)
+KeyCorner.Parent = KeyInput
+
+-- Nút Get Key
+GetKeyBtn.Parent = MainFrame
+GetKeyBtn.BackgroundColor3 = Color3.fromRGB(70, 40, 140)
+GetKeyBtn.Position = UDim2.new(0.1, 0, 0.65, 0)
+GetKeyBtn.Size = UDim2.new(0.35, 0, 0, 35)
+GetKeyBtn.Text = "LẤY LINK"
+GetKeyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+GetKeyBtn.Font = Enum.Font.GothamBold
+
+local GetCorner = Instance.new("UICorner")
+GetCorner.CornerRadius = UDim.new(0, 8)
+GetCorner.Parent = GetKeyBtn
+
+-- Nút Xác thực
+CheckBtn.Parent = MainFrame
+CheckBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 120)
+CheckBtn.Position = UDim2.new(0.55, 0, 0.65, 0)
+CheckBtn.Size = UDim2.new(0.35, 0, 0, 35)
+CheckBtn.Text = "XÁC THỰC"
+CheckBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CheckBtn.Font = Enum.Font.GothamBold
+
+local CheckCorner = Instance.new("UICorner")
+CheckCorner.CornerRadius = UDim.new(0, 8)
+CheckCorner.Parent = CheckBtn
+
+-- SỰ KIỆN NÚT BẤM
+GetKeyBtn.MouseButton1Click:Connect(function()
+    setclipboard(KeyLink)
+    GetKeyBtn.Text = "ĐÃ COPY!"
+    wait(1.5)
+    GetKeyBtn.Text = "LẤY LINK"
+end)
+
+CheckBtn.MouseButton1Click:Connect(function()
+    if KeyInput.Text == CorrectKey then
+        -- Lưu Key vào bộ nhớ máy để lần sau tự nhập
+        writefile(FileName, KeyInput.Text)
+        
+        CheckBtn.Text = "ĐANG LƯU..."
+        wait(1)
+        ScreenGui:Destroy()
+        LoadMainScript()
+    else
+        KeyInput.Text = ""
+        KeyInput.PlaceholderText = "SAI MÃ KHÓA!"
+        wait(1.5)
+        KeyInput.PlaceholderText = "Dán mã vào đây..."
+    end
+end)
