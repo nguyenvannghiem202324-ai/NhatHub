@@ -1,10 +1,10 @@
 --[[ 
     NHAT HUB
-    Key: NHATHUBKEY_76474
+    Key: NHATHUBKEY_11111
     Link: https://loot-link.com/s?E7uDBNda
 ]]
 
-local CorrectKey = "NHATHUBKEY_76474"
+local CorrectKey = "NHATHUBKEY_11111"
 local KeyLink = "https://loot-link.com/s?ASholoYf"
 local FileName = "NhatHub_KeyAuth.txt" -- Tên file lưu key trong bộ nhớ máy
 
