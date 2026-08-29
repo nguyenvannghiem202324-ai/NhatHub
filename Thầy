@@ -1,5 +1,5 @@
 -- ==========================================
--- NHẬT HUB Key System - Toàn Diện [360x190]
+-- NHẬT HUB Key System - Auto Save & Expire Fix [360x190]
 -- ==========================================
 local service = 26089; 
 local secret = "8b8f1f5d-bda0-439b-9885-0e1119835781";
@@ -9,14 +9,67 @@ local useNonce = true;
 local adminKey = "NHATVIPFCM";
 local adminHWID = "4ceb8be32caa5b0e81471368874bdb9388e00f23620419af9db1f92978706010"; 
 
+-- TỆP LƯU KEY
+local keyFileName = "NhatHub_SavedKey.txt";
+
 local TweenService = game:GetService("TweenService")
 local HttpService = game:GetService("HttpService")
+local StarterGui = game:GetService("StarterGui")
+
 local fSetClipboard = setclipboard or toclipboard or (Clipboard and Clipboard.set) or function() end
 local fRequest = request or http_request or (http and http.request)
+local fReadFile = readfile or function() return nil end
+local fWriteFile = writefile or function() end
+local fIsFile = isfile or function() return false end
+local fDelFile = delfile or function() end
+
 local fStringChar, fToString, fStringSub, fOsTime, fMathRandom, fMathFloor = string.char, tostring, string.sub, os.time, math.random, math.floor
 local fGetHwid = gethwid or function() return game:GetService("Players").LocalPlayer.UserId end
 local cachedLink, cachedTime = "", 0;
 local host = "https://api.platoboost.net"; 
+
+-- HÀM THÔNG BÁO ROBLOX SYSTEM
+local function notify(title, text, duration)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = title or "NHẬT HUB",
+            Text = text or "",
+            Duration = duration or 5
+        })
+    end)
+end
+
+-- HÀM QUẢN LÝ LƯU & ĐỌC KEY
+local function saveKeyToFile(key)
+    pcall(function() fWriteFile(keyFileName, tostring(key)) end)
+end
+
+local function getSavedKey()
+    if fIsFile(keyFileName) then
+        local success, content = pcall(function() return fReadFile(keyFileName) end)
+        if success and content and content ~= "" then return content end
+    end
+    return nil
+end
+
+local function deleteSavedKey()
+    pcall(function() if fIsFile(keyFileName) then fDelFile(keyFileName) end end)
+end
+
+-- HÀM QUY ĐỔI GIÂY SANG GIỜ/PHÚT
+local function formatTime(seconds)
+    if not seconds or seconds <= 0 then return "Vừa hết hạn" end
+    local hours = math.floor(seconds / 3600)
+    local mins = math.floor((seconds % 3600) / 60)
+    
+    if hours > 0 then
+        return string.format("%d giờ %d phút", hours, mins)
+    elseif mins > 0 then
+        return string.format("%d phút", mins)
+    else
+        return string.format("%d giây", math.floor(seconds))
+    end
+end
 
 function lEncode(data) return HttpService:JSONEncode(data) end
 function lDecode(data) return HttpService:JSONDecode(data) end
@@ -47,7 +100,7 @@ function cacheLink()
                 return true, cachedLink;
             end
         end
-        return false, "Failed to cache link."
+        return false, "Lỗi tạo link."
     else
         return true, cachedLink;
     end
@@ -59,8 +112,9 @@ local generateNonce = function()
     return str
 end
 
+-- XÁC THỰC KEY VÀ XỬ LÝ CHÍNH XÁC TIMESTAMP
 local verifyKey = function(key)
-    if not fRequest then return false end
+    if not fRequest then return false, "Lỗi Yêu Cầu Network" end
     local nonce = generateNonce();
     local endpoint = host .. "/public/whitelist/" .. fToString(service) .. "?identifier=" .. lDigest(fGetHwid()) .. "&key=" .. key;
     if useNonce then endpoint = endpoint .. "&nonce=" .. nonce; end
@@ -71,9 +125,33 @@ local verifyKey = function(key)
 
     if success and response and response.StatusCode == 200 then
         local decoded = lDecode(response.Body);
-        if decoded.success == true and decoded.data.valid == true then return true; end
+        if decoded.success == true and decoded.data and decoded.data.valid == true then
+            local data = decoded.data
+            local expireInfo = "Hợp lệ (Key 24 Giờ)" -- Fallback nếu không có data thời gian
+            
+            -- Ưu tiên tìm mốc thời gian hết hạn (Timestamp)
+            local expireTimestamp = data.expires_at or data.expire_at or data.expiration or data.expires
+            
+            if expireTimestamp and type(expireTimestamp) == "number" then
+                -- Nếu timestamp > 10 tỷ, hệ thống Platoboost đang trả về mili-giây thay vì giây
+                if expireTimestamp > 9999999999 then
+                    expireTimestamp = expireTimestamp / 1000
+                end
+                
+                -- Trừ cho thời gian hiện tại của thiết bị (đã đồng bộ UTC)
+                local remainingSeconds = expireTimestamp - fOsTime()
+                
+                if remainingSeconds > 0 then
+                    expireInfo = formatTime(remainingSeconds)
+                else
+                    expireInfo = "0 giờ 0 phút"
+                end
+            end
+            
+            return true, expireInfo
+        end
     end
-    return false;
+    return false, "Key Không Hợp Lệ Hoặc Hết Hạn"
 end
 
 -- ==========================================
@@ -237,49 +315,66 @@ task.spawn(function()
         return btn
     end
     
-    -- ĐÃ ĐỔI TÊN NÚT BẤM TẠI ĐÂY
     local GetKeyBtn = createBtn("GetKeyBtn", "LẤY KEY MÀ CHƠI", UDim2.new(0.05, 0, 0, 134))
     local CheckKeyBtn = createBtn("CheckKeyBtn", "ĐĂNG NHẬP MÀ VÀO", UDim2.new(1, -176, 0, 134))
     
-    -- XỬ LÝ SỰ KIỆN KIỂM TRA MÃ TRUY CẬP
-    CheckKeyBtn.MouseButton1Down:Connect(function() 
-        local inputKey = TextBox.Text
+    -- HÀM XỬ LÝ KIỂM TRA & KÍCH HOẠT KEY
+    local function processKeyCheck(inputKey, isAutoCheck)
         local currentHWID = tostring(fGetHwid())
 
         if inputKey ~= "" then
             -- KIỂM TRA ADMIN KEY KÈM BẢO MẬT HWID THIẾT BỊ
             if inputKey == adminKey then
                 if currentHWID == adminHWID then
-                    StatusLine.Text = ">> ADMIN APPROVED. INJECTING VIP..."
+                    StatusLine.Text = ">> ADMIN APPROVED (VĨNH VIỄN)"
                     StatusLine.TextColor3 = NeonColor
-                    task.wait(0.8)
+                    saveKeyToFile(inputKey)
+                    
+                    notify("NHẬT HUB VIP", "Đăng nhập Admin thành công!\nThời hạn: Vĩnh Viễn", 6)
+                    
+                    task.wait(1)
                     ScreenGui:Destroy()
                     loadstring(game:HttpGet("https://raw.githubusercontent.com/WhiteX1208/Scripts/refs/heads/main/StealAnEggs.luau"))()
                     return
                 else
                     StatusLine.Text = ">> WARNING: UNAUTHORIZED DEVICE!"
                     StatusLine.TextColor3 = Color3.fromRGB(255, 80, 80)
+                    deleteSavedKey()
+                    notify("NHẬT HUB ERROR", "Thiết bị không được phép dùng Admin Key!", 5)
                     return
                 end
             end
             
             -- KIỂM TRA KEY THƯỜNG (PLATOBOOST)
-            StatusLine.Text = "> CONTACTING PLATO REPOSITORY..."
+            StatusLine.Text = isAutoCheck and "> AUTO-CHECKING SAVED KEY..." or "> CONTACTING PLATO REPOSITORY..."
             StatusLine.TextColor3 = Color3.fromRGB(255, 200, 0)
-            local Verify = verifyKey(inputKey)
-            if Verify then
-                StatusLine.Text = ">> SUCCESS. LAUNCHING SCRIPT..."
+            
+            local isValid, expireInfo = verifyKey(inputKey)
+            if isValid then
+                StatusLine.Text = ">> VALID! HẠN: " .. string.upper(expireInfo)
                 StatusLine.TextColor3 = NeonColor
-                task.wait(0.8)
+                saveKeyToFile(inputKey)
+                
+                notify("NHẬT HUB ACTIVATED", "Kích hoạt thành công!\nThời hạn: " .. expireInfo, 6)
+                
+                task.wait(1)
                 ScreenGui:Destroy()
                 loadstring(game:HttpGet("https://raw.githubusercontent.com/WhiteX1208/Scripts/refs/heads/main/StealAnEggs.luau"))()
             else
-                StatusLine.Text = ">> ACCESS DENIED: INVALID KEY."
+                StatusLine.Text = ">> DENIED: " .. string.upper(expireInfo)
                 StatusLine.TextColor3 = Color3.fromRGB(255, 80, 80)
+                deleteSavedKey()
+                notify("NHẬT HUB KEY ERROR", expireInfo, 5)
             end 
-        end 
+        end
+    end
+
+    -- XỬ LÝ SỰ KIỆN NÚT CHECK KEY
+    CheckKeyBtn.MouseButton1Down:Connect(function() 
+        processKeyCheck(TextBox.Text, false)
     end)
     
+    -- XỬ LÝ SỰ KIỆN NÚT GET KEY
     GetKeyBtn.MouseButton1Down:Connect(function() 
         StatusLine.Text = "> GENERATING SECURE GATEWAY..."
         StatusLine.TextColor3 = Color3.fromRGB(255, 200, 0)
@@ -288,13 +383,25 @@ task.spawn(function()
             fSetClipboard(link);
             StatusLine.Text = ">> DECRYPTED LINK COPIED."
             StatusLine.TextColor3 = NeonColor
+            notify("NHẬT HUB KEY", "Đã sao chép link lấy key vào bộ nhớ tạm!", 4)
         else
             local backupLink = "https://gateway.platoboost.net/a/" .. fToString(service) .. "?id=" .. lDigest(fGetHwid())
             fSetClipboard(backupLink);
             StatusLine.Text = ">> BACKUP LINK INJECTED."
             StatusLine.TextColor3 = NeonColor
+            notify("NHẬT HUB KEY", "Đã sao chép link dự phòng vào bộ nhớ tạm!", 4)
         end
     end)
     
     ExitBtn.MouseButton1Down:Connect(function() ScreenGui:Destroy() end)
+
+    -- TỰ ĐỘNG KIỂM TRA & ĐĂNG NHẬP NẾU ĐÃ CÓ KEY LƯU TRƯỚC ĐÓ
+    task.spawn(function()
+        local savedKey = getSavedKey()
+        if savedKey and savedKey ~= "" then
+            TextBox.Text = savedKey
+            task.wait(0.3)
+            processKeyCheck(savedKey, true)
+        end
+    end)
 end)
