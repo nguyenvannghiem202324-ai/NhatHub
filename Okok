@@ -1,0 +1,1079 @@
+--====================================================
+-- NHAT HUB | TOP PET
+-- Delta Executor Android
+-- Floating toggle + live scan + quick prompt attempt
+--====================================================
+
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local LP = Players.LocalPlayer
+local PlayerGui = LP:WaitForChild("PlayerGui")
+
+local GUI_NAME = "NHAT_HUB_TOP_PET"
+local RETURN_POSITION = Vector3.new(-99.20, 3.50, 101.69)
+local SCAN_INTERVAL = 1.5
+local PICKUP_ATTEMPT_TIME = 5
+local VERIFY_TIMEOUT = 12
+
+--================ CLEANUP =================
+
+local old = PlayerGui:FindFirstChild(GUI_NAME)
+if old then old:Destroy() end
+
+local connections = {}
+local rows = {}
+local busy = false
+local closed = false
+local scanQueued = false
+local Status
+
+local function connect(signal, callback)
+    local c = signal:Connect(callback)
+    table.insert(connections, c)
+    return c
+end
+
+local function cleanup()
+    closed = true
+    for _, c in ipairs(connections) do
+        pcall(function() c:Disconnect() end)
+    end
+    table.clear(connections)
+end
+
+local function setStatus(text)
+    if Status and Status.Parent then
+        Status.Text = text
+    end
+end
+
+--================ HELPERS =================
+
+local function getCharacter()
+    return LP.Character
+end
+
+local function getHumanoid(character)
+    return character and character:FindFirstChildOfClass("Humanoid")
+end
+
+local function getRoot(character)
+    return character and character:FindFirstChild("HumanoidRootPart")
+end
+
+local function getPetFolder()
+    return Workspace:FindFirstChild("AnimalPickups", true)
+end
+
+local function getPetPosition(model)
+    if not model or not model:IsDescendantOf(Workspace) then
+        return nil
+    end
+
+    local ok, cf = pcall(function()
+        return model:GetPivot()
+    end)
+
+    if ok then return cf.Position end
+    return nil
+end
+
+local function parseNumber(value)
+    if type(value) ~= "string" then return 0 end
+
+    local s = value:lower()
+        :gsub(",", "")
+        :gsub("%$", "")
+        :gsub("/s", "")
+        :gsub("/sec", "")
+        :gsub("per second", "")
+        :gsub("%s+", "")
+
+    local number, suffix = s:match("([%d%.]+)([kmbt]?)")
+    number = tonumber(number)
+    if not number then return 0 end
+
+    local multiplier = {
+        k = 1e3, m = 1e6, b = 1e9, t = 1e12
+    }
+
+    return number * (multiplier[suffix] or 1)
+end
+
+local function formatNumber(n)
+    if n >= 1e12 then
+        return string.format("%.2fT", n / 1e12)
+    elseif n >= 1e9 then
+        return string.format("%.2fB", n / 1e9)
+    elseif n >= 1e6 then
+        return string.format("%.2fM", n / 1e6)
+    elseif n >= 1e3 then
+        return string.format("%.2fK", n / 1e3)
+    end
+    return tostring(math.floor(n))
+end
+
+--================ GUI: WOOD PET PANEL =================
+local gui = Instance.new("ScreenGui")
+gui.Name = GUI_NAME
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.DisplayOrder = 999
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+gui.Parent = PlayerGui
+
+local WOOD = Color3.fromRGB(112,72,43)
+local WOOD_LIGHT = Color3.fromRGB(174,119,69)
+local GOLD = Color3.fromRGB(255,202,74)
+local DARK = Color3.fromRGB(42,29,22)
+local RED = Color3.fromRGB(220,48,43)
+local WHITE = Color3.fromRGB(255,255,255)
+local GREEN = Color3.fromRGB(75,190,58)
+
+local function round(parent, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius)
+    c.Parent = parent
+    return c
+end
+local function outline(parent, color, thickness)
+    local st = Instance.new("UIStroke")
+    st.Color = color
+    st.Thickness = thickness or 1
+    st.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    st.Parent = parent
+    return st
+end
+local function makeLabel(parent, text, size, color, font)
+    local t = Instance.new("TextLabel")
+    t.BackgroundTransparency = 1
+    t.Text = text
+    t.TextSize = size
+    t.TextColor3 = color
+    t.Font = font or Enum.Font.GothamBold
+    t.TextXAlignment = Enum.TextXAlignment.Left
+    t.TextYAlignment = Enum.TextYAlignment.Center
+    t.Parent = parent
+    return t
+end
+
+local Main = Instance.new("Frame")
+Main.Name = "PetPanel"
+Main.AnchorPoint = Vector2.new(1,0.5)
+Main.Size = UDim2.fromOffset(286,310)
+Main.Position = UDim2.new(1,-10,0.5,0)
+Main.BackgroundColor3 = WOOD
+Main.BorderSizePixel = 0
+Main.ClipsDescendants = true
+Main.Parent = gui
+round(Main,7)
+outline(Main,Color3.fromRGB(30,20,15),4)
+
+local Inner = Instance.new("Frame")
+Inner.Name = "Inner"
+Inner.Position = UDim2.fromOffset(5,5)
+Inner.Size = UDim2.new(1,-10,1,-10)
+Inner.BackgroundColor3 = WOOD_LIGHT
+Inner.BorderSizePixel = 0
+Inner.Parent = Main
+round(Inner,5)
+outline(Inner,Color3.fromRGB(75,44,24),2)
+
+local Header = Instance.new("Frame")
+Header.Name = "Header"
+Header.Size = UDim2.new(1,-8,0,39)
+Header.Position = UDim2.fromOffset(4,4)
+Header.BackgroundColor3 = Color3.fromRGB(235,170,59)
+Header.BorderSizePixel = 0
+Header.Parent = Inner
+round(Header,4)
+outline(Header,Color3.fromRGB(63,37,19),2)
+
+local Title = makeLabel(Header,"NHAT HUB | TOP PET",13,WHITE)
+Title.Position = UDim2.fromOffset(9,0)
+Title.Size = UDim2.new(1,-48,1,0)
+Title.TextStrokeTransparency = 0.35
+Title.TextStrokeColor3 = Color3.fromRGB(76,39,17)
+
+local CloseButton = Instance.new("TextButton")
+CloseButton.Name = "CloseButton"
+CloseButton.Size = UDim2.fromOffset(27,27)
+CloseButton.Position = UDim2.new(1,-31,0,5)
+CloseButton.BackgroundColor3 = RED
+CloseButton.Text = "×"
+CloseButton.TextColor3 = WHITE
+CloseButton.TextSize = 23
+CloseButton.Font = Enum.Font.GothamBlack
+CloseButton.Parent = Header
+round(CloseButton,4)
+outline(CloseButton,Color3.fromRGB(65,20,15),2)
+
+Status = Instance.new("TextLabel")
+Status.Name = "Status"
+Status.Position = UDim2.fromOffset(8,47)
+Status.Size = UDim2.new(1,-16,0,25)
+Status.BackgroundColor3 = Color3.fromRGB(65,43,28)
+Status.Text = "  Đang quét pet..."
+Status.TextColor3 = GOLD
+Status.TextSize = 9
+Status.Font = Enum.Font.GothamBold
+Status.TextXAlignment = Enum.TextXAlignment.Left
+Status.TextTruncate = Enum.TextTruncate.AtEnd
+Status.Parent = Inner
+round(Status,4)
+outline(Status,Color3.fromRGB(38,25,17),1)
+
+local sectionTitle = makeLabel(Inner,"PET TRONG KHU VỰC",11,WHITE)
+sectionTitle.Position = UDim2.fromOffset(9,74)
+sectionTitle.Size = UDim2.new(1,-18,0,18)
+local subtitle = makeLabel(Inner,"Chọn pet để bắt đầu chuỗi thao tác",8,Color3.fromRGB(255,224,183),Enum.Font.Gotham)
+subtitle.Position = UDim2.fromOffset(9,91)
+subtitle.Size = UDim2.new(1,-18,0,14)
+
+local List = Instance.new("ScrollingFrame")
+List.Name = "PetRows"
+List.Position = UDim2.fromOffset(7,108)
+List.Size = UDim2.new(1,-14,1,-151)
+List.BackgroundColor3 = Color3.fromRGB(82,53,34)
+List.BorderSizePixel = 0
+List.ScrollBarThickness = 4
+List.ScrollBarImageColor3 = GOLD
+List.CanvasSize = UDim2.new(0,0,0,0)
+List.AutomaticCanvasSize = Enum.AutomaticSize.Y
+List.Parent = Inner
+round(List,4)
+outline(List,Color3.fromRGB(46,28,18),2)
+local padding = Instance.new("UIPadding")
+padding.PaddingTop = UDim.new(0,5)
+padding.PaddingBottom = UDim.new(0,5)
+padding.PaddingLeft = UDim.new(0,5)
+padding.PaddingRight = UDim.new(0,5)
+padding.Parent = List
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0,5)
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Parent = List
+
+local Refresh = Instance.new("TextButton")
+Refresh.Name = "RefreshButton"
+Refresh.Position = UDim2.new(0,7,1,-37)
+Refresh.Size = UDim2.new(1,-14,0,29)
+Refresh.BackgroundColor3 = Color3.fromRGB(74,161,53)
+Refresh.Text = "↻  LÀM MỚI DANH SÁCH"
+Refresh.TextColor3 = WHITE
+Refresh.TextSize = 10
+Refresh.Font = Enum.Font.GothamBlack
+Refresh.Parent = Inner
+round(Refresh,4)
+outline(Refresh,Color3.fromRGB(38,76,27),2)
+
+-- Nút ảnh vuông cố định: X=97%, Y=35%, 36x36 px.
+-- Không kéo thả, không có bảng chỉnh riêng cho nút.
+local Toggle = Instance.new("ImageButton")
+Toggle.Name = "NHAT_HUB_TOGGLE"
+Toggle.Size = UDim2.fromOffset(36,36)
+Toggle.AnchorPoint = Vector2.new(0.5,0.5)
+Toggle.Position = UDim2.new(0.97,0,0.35,0)
+Toggle.BackgroundTransparency = 1
+Toggle.BorderSizePixel = 0
+Toggle.AutoButtonColor = false
+Toggle.Image = "rbxassetid://111004682046008"
+Toggle.ScaleType = Enum.ScaleType.Stretch
+Toggle.ResampleMode = Enum.ResamplerMode.Default
+Toggle.Visible = false
+Toggle.ZIndex = 200
+Toggle.Active = true
+Toggle.Selectable = false
+Toggle.Parent = gui
+
+-- Bảng điều chỉnh vị trí/kích thước menu
+local SettingsButton = Instance.new("TextButton")
+SettingsButton.Name = "NHAT_HUB_LAYOUT_SETTINGS_BUTTON"
+SettingsButton.Size = UDim2.fromOffset(30,30)
+SettingsButton.AnchorPoint = Vector2.new(1,0)
+SettingsButton.Position = UDim2.new(1,-10,0,10)
+SettingsButton.BackgroundColor3 = Color3.fromRGB(105,57,28)
+SettingsButton.BorderSizePixel = 0
+SettingsButton.Text = "⚙"
+SettingsButton.TextColor3 = Color3.fromRGB(255,226,165)
+SettingsButton.Font = Enum.Font.GothamBold
+SettingsButton.TextSize = 18
+SettingsButton.ZIndex = 250
+SettingsButton.Parent = gui
+round(SettingsButton,5)
+outline(SettingsButton,Color3.fromRGB(45,22,15),2)
+
+local Settings = Instance.new("Frame")
+Settings.Name = "NHAT_HUB_LAYOUT_SETTINGS"
+Settings.Size = UDim2.fromOffset(232,218)
+Settings.AnchorPoint = Vector2.new(1,0.5)
+Settings.Position = UDim2.new(1,-52,0.5,0)
+Settings.BackgroundColor3 = DARK
+Settings.BorderSizePixel = 0
+Settings.Visible = false
+Settings.ZIndex = 300
+Settings.Parent = gui
+round(Settings,7)
+outline(Settings,GOLD,2)
+
+local function settingLabel(name, text, pos, size, fontSize, color)
+    local label = Instance.new("TextLabel")
+    label.Name=name; label.BackgroundTransparency=1; label.Position=pos; label.Size=size
+    label.Text=text; label.TextColor3=color or Color3.fromRGB(255,235,196)
+    label.Font=Enum.Font.GothamBold; label.TextSize=fontSize or 11
+    label.TextXAlignment=Enum.TextXAlignment.Left; label.ZIndex=301; label.Parent=Settings
+    return label
+end
+local function settingButton(name,text,pos,size)
+    local b=Instance.new("TextButton")
+    b.Name=name; b.Position=pos; b.Size=size; b.BackgroundColor3=WOOD
+    b.BorderSizePixel=0; b.Text=text; b.TextColor3=WHITE; b.Font=Enum.Font.GothamBlack
+    b.TextSize=14; b.ZIndex=302; b.Parent=Settings; round(b,4); outline(b,DARK,1)
+    return b
+end
+settingLabel("Title","ĐIỀU CHỈNH MENU",UDim2.fromOffset(10,7),UDim2.new(1,-45,0,22),12,GOLD)
+local SettingsClose=settingButton("CloseSettings","×",UDim2.new(1,-29,0,5),UDim2.fromOffset(23,23))
+SettingsClose.TextSize=18
+settingLabel("PositionTitle","VỊ TRÍ MENU (PIXEL)",UDim2.fromOffset(10,34),UDim2.new(1,-20,0,17),10)
+local xLabel=settingLabel("XValue","X: 0 px",UDim2.fromOffset(12,54),UDim2.fromOffset(75,22),11)
+local xMinus=settingButton("XMinus","−",UDim2.fromOffset(94,53),UDim2.fromOffset(28,24))
+local xPlus=settingButton("XPlus","+",UDim2.fromOffset(127,53),UDim2.fromOffset(28,24))
+local yLabel=settingLabel("YValue","Y: 0 px",UDim2.fromOffset(12,82),UDim2.fromOffset(75,22),11)
+local yMinus=settingButton("YMinus","−",UDim2.fromOffset(94,81),UDim2.fromOffset(28,24))
+local yPlus=settingButton("YPlus","+",UDim2.fromOffset(127,81),UDim2.fromOffset(28,24))
+settingLabel("SizeTitle","KÍCH THƯỚC MENU",UDim2.fromOffset(10,111),UDim2.new(1,-20,0,17),10)
+local sizeLabel=settingLabel("SizeValue","Kích thước: 100%",UDim2.fromOffset(12,132),UDim2.fromOffset(128,22),11)
+local sizeMinus=settingButton("SizeMinus","−",UDim2.fromOffset(143,130),UDim2.fromOffset(28,24))
+local sizePlus=settingButton("SizePlus","+",UDim2.fromOffset(176,130),UDim2.fromOffset(28,24))
+local resetButton=settingButton("ResetLayout","ĐẶT LẠI",UDim2.fromOffset(10,173),UDim2.fromOffset(96,30))
+local doneButton=settingButton("DoneLayout","XONG",UDim2.fromOffset(119,173),UDim2.fromOffset(96,30))
+
+local mainScale=Main:FindFirstChild("NHAT_HUB_AdjustableScale") or Instance.new("UIScale")
+mainScale.Name="NHAT_HUB_AdjustableScale"; mainScale.Scale=1; mainScale.Parent=Main
+local originalPosition=Main.Position
+local openPosition=originalPosition
+local positionX=originalPosition.X.Offset
+local positionY=originalPosition.Y.Offset
+local scalePercent=100
+
+local function updatePosition()
+    openPosition=UDim2.new(originalPosition.X.Scale,positionX,originalPosition.Y.Scale,positionY)
+    if menuOpen ~= false then Main.Position=openPosition end
+    xLabel.Text="X: "..tostring(positionX).." px"
+    yLabel.Text="Y: "..tostring(positionY).." px"
+end
+local function updateSize()
+    scalePercent=math.clamp(scalePercent,60,130)
+    mainScale.Scale=scalePercent/100
+    sizeLabel.Text="Kích thước: "..tostring(scalePercent).."%"
+end
+
+-- Drag panel by the header; works with touch on Android.
+local dragging, dragStart, startPosition = false, nil, nil
+connect(Header.InputBegan,function(input)
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPosition = Main.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+connect(UserInputService.InputChanged,function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseMovement) then
+        local delta = input.Position - dragStart
+        Main.Position = UDim2.new(startPosition.X.Scale,startPosition.X.Offset+delta.X,startPosition.Y.Scale,startPosition.Y.Offset+delta.Y)
+    end
+end)
+
+--================ RESET AND TELEPORT =================
+
+local function resetAndWait()
+    local oldCharacter = getCharacter()
+    local humanoid = getHumanoid(oldCharacter)
+
+    if not humanoid then return false end
+
+    setStatus("Đang reset nhân vật...")
+    pcall(function()
+        humanoid.Health = 0
+    end)
+
+    local started = os.clock()
+
+    repeat
+        task.wait(0.1)
+
+        local character = getCharacter()
+        local newHumanoid = getHumanoid(character)
+        local root = getRoot(character)
+
+        if character and character ~= oldCharacter
+        and newHumanoid and root and newHumanoid.Health > 0 then
+            task.wait(0.25)
+            return true
+        end
+    until os.clock() - started > 15
+
+    local character = getCharacter()
+    return getHumanoid(character) ~= nil
+        and getRoot(character) ~= nil
+        and getHumanoid(character).Health > 0
+end
+
+local function teleportCharacter(position)
+    local character = getCharacter()
+    local humanoid = getHumanoid(character)
+    local root = getRoot(character)
+
+    if not character or not humanoid or not root
+    or humanoid.Health <= 0 then
+        return false
+    end
+
+    return pcall(function()
+        character:PivotTo(CFrame.new(position))
+    end)
+end
+
+local function teleportNearPet(model)
+    local position = getPetPosition(model)
+    if not position then return false end
+
+    return teleportCharacter(position + Vector3.new(0, 3, 0))
+end
+
+--================ PROMPT SEARCH =================
+
+local function preparePrompt(prompt)
+    if not prompt or not prompt:IsA("ProximityPrompt") then
+        return
+    end
+
+    pcall(function()
+        prompt.HoldDuration = 0
+        prompt.RequiresLineOfSight = false
+    end)
+end
+
+-- Tìm prompt bên trong pet, ở các đối tượng cha và ở gần pet.
+-- Chỉ thử prompt ở khoảng cách gần để tránh kích hoạt prompt xa.
+local function getNearbyPrompts(model)
+    local results = {}
+    local seen = {}
+
+    local petPosition = getPetPosition(model)
+    if not petPosition then return results end
+
+    local function addPrompt(prompt)
+        if not prompt:IsA("ProximityPrompt") or seen[prompt] then
+            return
+        end
+
+        local parent = prompt.Parent
+        local part
+
+        if parent and parent:IsA("BasePart") then
+            part = parent
+        elseif parent then
+            part = parent:FindFirstChildWhichIsA("BasePart", true)
+        end
+
+        if not part then return end
+
+        local distance = (part.Position - petPosition).Magnitude
+        if distance <= 14 then
+            seen[prompt] = true
+            table.insert(results, {
+                Prompt = prompt,
+                Distance = distance,
+            })
+        end
+    end
+
+    -- Prompt nằm trong model pet.
+    for _, object in ipairs(model:GetDescendants()) do
+        if object:IsA("ProximityPrompt") then
+            addPrompt(object)
+        end
+    end
+
+    -- Prompt có thể nằm trên model cha hoặc đối tượng bao quanh.
+    local current = model.Parent
+    local folder = getPetFolder()
+
+    while current and current ~= folder do
+        if current:IsA("Model") or current:IsA("Folder") then
+            for _, object in ipairs(current:GetDescendants()) do
+                if object:IsA("ProximityPrompt") then
+                    addPrompt(object)
+                end
+            end
+        end
+        current = current.Parent
+    end
+
+    -- Tìm thêm prompt gần vị trí pet.
+    for _, object in ipairs(Workspace:GetDescendants()) do
+        if object:IsA("ProximityPrompt") then
+            addPrompt(object)
+        end
+    end
+
+    table.sort(results, function(a, b)
+        return a.Distance < b.Distance
+    end)
+
+    return results
+end
+
+local function tryPickup(model)
+    local prompts = getNearbyPrompts(model)
+    local fired = 0
+
+    for _, entry in ipairs(prompts) do
+        local prompt = entry.Prompt
+
+        if prompt and prompt.Parent then
+            preparePrompt(prompt)
+
+            if typeof(fireproximityprompt) == "function" then
+                local ok = pcall(function()
+                    fireproximityprompt(prompt, 0)
+                end)
+
+                if ok then
+                    fired += 1
+                end
+            end
+        end
+    end
+
+    return fired, #prompts
+end
+
+--================ VERIFY PICKUP =================
+
+local function waitForPetChange(model, originalParent)
+    local started = os.clock()
+
+    while os.clock() - started < VERIFY_TIMEOUT do
+        task.wait(0.2)
+
+        if not model:IsDescendantOf(Workspace) then
+            return true
+        end
+
+        -- Chỉ xem là thay đổi nếu model không còn ở parent ban đầu.
+        if originalParent and model.Parent ~= originalParent then
+            return true
+        end
+    end
+
+    return false
+end
+
+--================ PICKUP SEQUENCE =================
+
+local function startPetSequence(model)
+    if busy then
+        setStatus("Đang xử lý pet khác...")
+        return
+    end
+
+    if not model or not model:IsDescendantOf(Workspace) then
+        setStatus("Pet không còn trên map")
+        return
+    end
+
+    busy = true
+
+    task.spawn(function()
+        local ok, err = pcall(function()
+            local originalParent = model.Parent
+
+            -- 1. Reset và đợi hồi sinh.
+            if not resetAndWait() then
+                setStatus("Không thể hồi sinh nhân vật")
+                return
+            end
+
+            if not model:IsDescendantOf(Workspace) then
+                setStatus("Pet đã biến mất")
+                return
+            end
+
+            -- 2. Đến gần pet.
+            if not teleportNearPet(model) then
+                setStatus("Không thể đến gần pet")
+                return
+            end
+
+            task.wait(0.5)
+
+            -- 3. Thử kích hoạt prompt nhiều lần.
+            setStatus("Đang thử bế pet...")
+
+            local startTime = os.clock()
+            local totalPrompts = 0
+
+            repeat
+                if not model:IsDescendantOf(Workspace) then
+                    break
+                end
+
+                local _, found = tryPickup(model)
+                totalPrompts = math.max(totalPrompts, found)
+
+                task.wait(0.5)
+            until os.clock() - startTime >= PICKUP_ATTEMPT_TIME
+
+            if totalPrompts == 0 then
+                setStatus("Không tìm thấy prompt gần pet")
+            end
+
+            -- 4. Chờ trạng thái pet thay đổi.
+            local changed = waitForPetChange(model, originalParent)
+
+            if changed then
+                -- 5. Trở về tọa độ mới.
+                setStatus("Pet đã thay đổi - đang trở về...")
+                task.wait(0.2)
+                teleportCharacter(RETURN_POSITION)
+                task.wait(0.4)
+
+                -- 6. Reset thêm một lần (RESET LẦN 2).
+                if not resetAndWait() then
+                    setStatus("Không thể hồi sinh lần 2")
+                    return
+                end
+
+                -- 7. Sau reset lần 2, teleport lại tọa độ thứ nhất.
+                if not teleportCharacter(RETURN_POSITION) then
+                    setStatus("Không thể teleport lại vị trí thứ nhất")
+                    return
+                end
+
+                task.wait(0.5)
+
+                -- 8. Chạy lại logic auto bê pet sau reset lần 2.
+                -- Nếu game đã thay instance pet sau lần reset/nhặt đầu tiên,
+                -- tìm lại model cùng tên trong AnimalPickups.
+                local targetModel = model
+                local targetName = model.Name
+
+                if not targetModel:IsDescendantOf(Workspace) then
+                    local folder = getPetFolder()
+                    targetModel = nil
+                    if folder then
+                        for _, candidate in ipairs(folder:GetDescendants()) do
+                            if candidate:IsA("Model") and candidate.Name == targetName then
+                                targetModel = candidate
+                                break
+                            end
+                        end
+                    end
+                end
+
+                if not targetModel or not targetModel:IsDescendantOf(Workspace) then
+                    setStatus("Không tìm thấy pet mục tiêu sau reset lần 2; không teleport vị trí cuối")
+                    return
+                end
+
+                -- Quan trọng: ở tọa độ -99 có thể đang quá xa prompt.
+                -- Tiếp cận lại pet trước khi kích hoạt prompt như lần đầu.
+                if not teleportNearPet(targetModel) then
+                    setStatus("Không thể đến gần pet để bê lần 2")
+                    return
+                end
+                task.wait(0.5)
+
+                local retryParent = targetModel.Parent
+                setStatus("Đang tự động bê pet sau reset lần 2...")
+
+                local retryStart = os.clock()
+                local retryPrompts = 0
+                local carriedSecondTime = false
+
+                repeat
+                    if not targetModel:IsDescendantOf(Workspace) then
+                        carriedSecondTime = true
+                        break
+                    end
+
+                    local _, found = tryPickup(targetModel)
+                    retryPrompts = math.max(retryPrompts, found)
+
+                    -- Kiểm tra liên tục trong khi thử bê; không chờ hết vòng
+                    -- rồi mới bắt đầu xác minh trạng thái.
+                    if not targetModel:IsDescendantOf(Workspace)
+                    or (retryParent and targetModel.Parent ~= retryParent) then
+                        carriedSecondTime = true
+                        break
+                    end
+
+                    task.wait(0.5)
+                until os.clock() - retryStart >= PICKUP_ATTEMPT_TIME
+
+                if not carriedSecondTime then
+                    carriedSecondTime = waitForPetChange(targetModel, retryParent)
+                end
+
+                if not carriedSecondTime then
+                    if retryPrompts == 0 then
+                        setStatus("Không tìm thấy prompt để bê pet lần 2")
+                    else
+                        setStatus("Chưa xác nhận bê thành công lần 2; giữ nguyên vị trí")
+                    end
+                    return
+                end
+
+                -- 9. Chỉ sau khi xác nhận thay đổi trong lần bê thứ hai mới đi vị trí cuối.
+                setStatus("Đã xác nhận pet được bê lần 2 - đang đến vị trí cuối...")
+                if teleportCharacter(Vector3.new(-52.98, 3.50, 0.22)) then
+                    setStatus("Đã chạy xong chuỗi thao tác")
+                else
+                    setStatus("Không thể teleport đến vị trí cuối")
+                end
+            else
+                setStatus("Chưa xác nhận lấy được pet")
+            end
+        end)
+
+        if not ok then
+            setStatus("Lỗi: " .. tostring(err))
+        end
+
+        busy = false
+    end)
+end
+
+--================ VIEWPORT PREVIEW =================
+
+local function createPreview(model, parent)
+    local viewport = Instance.new("ViewportFrame")
+    viewport.Name = "Pet3DPreview"
+    viewport.Size = UDim2.new(0, 48, 0, 47)
+    viewport.Position = UDim2.new(0, 3, 0.5, -23)
+    viewport.BackgroundColor3 = Color3.fromRGB(242, 207, 151)
+    viewport.BackgroundTransparency = 0
+    viewport.BorderSizePixel = 0
+    viewport.Ambient = Color3.fromRGB(210, 210, 210)
+    viewport.LightColor = Color3.fromRGB(255, 244, 224)
+    viewport.LightDirection = Vector3.new(-1, -1, -1)
+    viewport.ClipsDescendants = true
+    viewport.Parent = parent
+
+    Instance.new("UICorner", viewport).CornerRadius = UDim.new(0, 4)
+    outline(viewport, Color3.fromRGB(89,54,29), 1)
+
+    local world = Instance.new("WorldModel")
+    world.Parent = viewport
+
+    local camera = Instance.new("Camera")
+    camera.FieldOfView = 30
+    camera.Parent = viewport
+    viewport.CurrentCamera = camera
+
+    local ok, clone = pcall(function()
+        return model:Clone()
+    end)
+    if not ok or not clone then return end
+
+    for _, item in ipairs(clone:GetDescendants()) do
+        if item:IsA("Script") or item:IsA("LocalScript") then
+            item:Destroy()
+        elseif item:IsA("BasePart") then
+            item.Anchored = true
+            item.CanCollide = false
+            item.CastShadow = false
+        end
+    end
+
+    clone.Parent = world
+
+    local success, boxCFrame, size = pcall(function()
+        return clone:GetBoundingBox()
+    end)
+    if not success or not size then
+        clone:Destroy()
+        return
+    end
+
+    -- Đưa tâm của pet về gốc để căn giữa ổn định trong ô 3D.
+    local center = boxCFrame.Position
+    pcall(function()
+        clone:PivotTo(clone:GetPivot() - center)
+    end)
+
+    local largest = math.max(size.X, size.Y, size.Z, 0.5)
+    local radius = math.sqrt(size.X * size.X + size.Y * size.Y + size.Z * size.Z) * 0.5
+    local fovRadians = math.rad(camera.FieldOfView)
+    local distance = math.max((radius / math.tan(fovRadians * 0.5)) * 1.12, largest * 1.15, 1.5)
+    local focus = Vector3.new(0, size.Y * 0.04, 0)
+    local viewDirection = Vector3.new(1, 0.38, 1).Unit
+    camera.CFrame = CFrame.lookAt(focus + viewDirection * distance, focus)
+end
+--================ ROWS AND SCAN =================
+
+local function createRow(data, index)
+    local row = Instance.new("Frame")
+    row.Name = "PetRow"
+    row.Size = UDim2.new(1,-2,0,53)
+    row.BackgroundColor3 = Color3.fromRGB(205,158,105)
+    row.BorderSizePixel = 0
+    row.LayoutOrder = index
+    row.Parent = List
+    round(row,4)
+    outline(row,Color3.fromRGB(71,42,24),2)
+
+    createPreview(data.Model,row)
+
+    local nameLabel = makeLabel(row,data.Name,9,Color3.fromRGB(105,26,26))
+    nameLabel.Name = "PetName"
+    nameLabel.Position = UDim2.fromOffset(55,5)
+    nameLabel.Size = UDim2.new(1,-114,0,19)
+    nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+
+    local moneyLabel = makeLabel(row,"$"..formatNumber(data.Money).."/s",8,Color3.fromRGB(35,28,22),Enum.Font.Gotham)
+    moneyLabel.Name = "PetIncome"
+    moneyLabel.Position = UDim2.fromOffset(55,25)
+    moneyLabel.Size = UDim2.new(1,-114,0,17)
+
+    local button = Instance.new("TextButton")
+    button.Name = "Action"
+    button.Size = UDim2.fromOffset(51,31)
+    button.Position = UDim2.new(1,-56,0.5,-15)
+    button.BackgroundColor3 = RED
+    button.Text = "BẾ PET"
+    button.TextColor3 = WHITE
+    button.Font = Enum.Font.GothamBlack
+    button.TextSize = 9
+    button.Parent = row
+    round(button,3)
+    outline(button,Color3.fromRGB(70,18,15),2)
+
+    connect(button.Activated,function()
+        if busy then
+            setStatus("  Đang xử lý pet khác...")
+            return
+        end
+        local oldColor = button.BackgroundColor3
+        button.BackgroundColor3 = GREEN
+        task.delay(0.2,function()
+            if button and button.Parent then button.BackgroundColor3 = oldColor end
+        end)
+        startPetSequence(data.Model)
+    end)
+    return row
+end
+
+local function scanPets()
+    local folder = getPetFolder()
+
+    if not folder then
+        setStatus("Không tìm thấy AnimalPickups")
+        return
+    end
+
+    local found = {}
+
+    for _, object in ipairs(folder:GetDescendants()) do
+        if object:IsA("TextLabel") and object.Visible then
+            local money = parseNumber(object.Text)
+
+            if money > 0 then
+                local current = object.Parent
+
+                while current and current ~= folder
+                and not current:IsA("Model") do
+                    current = current.Parent
+                end
+
+                if current and current:IsA("Model") then
+                    local oldData = found[current]
+
+                    if not oldData or money > oldData.Money then
+                        found[current] = {
+                            Model = current,
+                            Name = current.Name,
+                            Money = money,
+                        }
+                    end
+                end
+            end
+        end
+    end
+
+    local dataList = {}
+    for _, data in pairs(found) do
+        table.insert(dataList, data)
+    end
+
+    table.sort(dataList, function(a, b)
+        return a.Money > b.Money
+    end)
+
+    local present = {}
+
+    for index, data in ipairs(dataList) do
+        local model = data.Model
+        present[model] = true
+
+        local row = rows[model]
+
+        if not row or not row.Parent then
+            rows[model] = createRow(data, index)
+        else
+            row.LayoutOrder = index
+
+            local nameLabel = row:FindFirstChild("PetName")
+            local moneyLabel = row:FindFirstChild("PetIncome")
+
+            if nameLabel then nameLabel.Text = data.Name end
+            if moneyLabel then
+                moneyLabel.Text = "$" .. formatNumber(data.Money) .. "/s"
+            end
+        end
+    end
+
+    for model, row in pairs(rows) do
+        if not present[model] then
+            if row and row.Parent then row:Destroy() end
+            rows[model] = nil
+        end
+    end
+
+    setStatus("Tìm thấy " .. #dataList .. " pet")
+end
+
+local function queueScan()
+    if scanQueued or closed then return end
+    scanQueued = true
+
+    task.delay(0.25, function()
+        scanQueued = false
+        if not closed and gui.Parent then
+            pcall(scanPets)
+        end
+    end)
+end
+
+--================ EVENTS =================
+
+connect(Refresh.Activated, function()
+    setStatus("  Đang làm mới danh sách...")
+    scanPets()
+    Refresh.Text = "✓  ĐÃ LÀM MỚI"
+    task.delay(0.8,function()
+        if Refresh and Refresh.Parent then Refresh.Text = "↻  LÀM MỚI DANH SÁCH" end
+    end)
+end)
+
+-- Đóng/mở bằng hiệu ứng trượt; dùng menuOpen khai báo trước để bảng cài đặt cập nhật đúng.
+local menuOpen = false
+local menuAnimating = false
+local slideTween
+local function hiddenMenuPosition()
+    local width = Main.AbsoluteSize.X * mainScale.Scale
+    return UDim2.new(1,width+32,openPosition.Y.Scale,positionY)
+end
+local function setMenuOpen(wantOpen)
+    if menuAnimating or menuOpen == wantOpen then return end
+    menuAnimating=true; menuOpen=wantOpen
+    if slideTween then pcall(function() slideTween:Cancel() end) end
+    if wantOpen then
+        Main.Position=hiddenMenuPosition(); Main.Visible=true
+        Toggle.Visible=false; SettingsButton.Visible=true
+    else
+        Toggle.Visible=true; SettingsButton.Visible=false; Settings.Visible=false
+    end
+    local target=wantOpen and openPosition or hiddenMenuPosition()
+    slideTween=TweenService:Create(Main,TweenInfo.new(0.32,Enum.EasingStyle.Quint,Enum.EasingDirection.Out),{Position=target})
+    slideTween:Play()
+    slideTween.Completed:Connect(function(state)
+        if not gui.Parent then return end
+        if state==Enum.PlaybackState.Completed then
+            if wantOpen then Main.Position=openPosition; Main.Visible=true; Toggle.Visible=false
+            else Main.Visible=false; Toggle.Visible=true end
+        end
+        menuAnimating=false
+    end)
+end
+
+connect(CloseButton.Activated,function() setMenuOpen(false) end)
+connect(Toggle.Activated,function() setMenuOpen(true) end)
+connect(SettingsButton.Activated,function() Settings.Visible=not Settings.Visible end)
+connect(SettingsClose.Activated,function() Settings.Visible=false end)
+connect(doneButton.Activated,function() Settings.Visible=false end)
+connect(xMinus.Activated,function() positionX-=10; updatePosition() end)
+connect(xPlus.Activated,function() positionX+=10; updatePosition() end)
+connect(yMinus.Activated,function() positionY-=10; updatePosition() end)
+connect(yPlus.Activated,function() positionY+=10; updatePosition() end)
+connect(sizeMinus.Activated,function() scalePercent-=5; updateSize() end)
+connect(sizePlus.Activated,function() scalePercent+=5; updateSize() end)
+connect(resetButton.Activated,function()
+    positionX=originalPosition.X.Offset; positionY=originalPosition.Y.Offset; scalePercent=100
+    updatePosition(); updateSize()
+end)
+
+-- Nút ảnh được cố định tại X=97%, Y=35%; không hỗ trợ kéo thả.
+
+connect(Workspace.DescendantAdded, function(object)
+    if object:IsA("ProximityPrompt") then
+        preparePrompt(object)
+    end
+    queueScan()
+end)
+
+connect(Workspace.DescendantRemoving, function()
+    queueScan()
+end)
+
+-- Responsive sizing for Android; keep the panel compact on narrow screens.
+local function fitPanel()
+    local camera = Workspace.CurrentCamera
+    if not camera then return end
+    local viewport = camera.ViewportSize
+    local width = math.clamp(viewport.X * 0.42, 245, 286)
+    local height = math.clamp(viewport.Y * 0.48, 270, 340)
+    Main.Size = UDim2.fromOffset(width,height)
+    if viewport.X < 600 then
+        originalPosition = UDim2.new(1,-6,0.5,0)
+    else
+        originalPosition = UDim2.new(1,-10,0.5,0)
+    end
+    openPosition = UDim2.new(originalPosition.X.Scale, positionX, originalPosition.Y.Scale, positionY)
+    if menuOpen then Main.Position = openPosition else Main.Position = hiddenMenuPosition() end
+end
+fitPanel()
+updatePosition()
+updateSize()
+-- Khởi động ở trạng thái ĐÓNG: nút vuông luôn hiện để người dùng bấm mở menu.
+Main.Visible = false
+Main.Position = hiddenMenuPosition()
+Toggle.Visible = true
+SettingsButton.Visible = false
+Settings.Visible = false
+if Workspace.CurrentCamera then
+    connect(Workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"),fitPanel)
+end
+
+--================ START =================
+
+scanPets()
+
+task.spawn(function()
+    while not closed and gui.Parent do
+        task.wait(SCAN_INTERVAL)
+        if not closed and gui.Parent then
+            pcall(scanPets)
+        end
+    end
+end)
+
+print("[NHAT HUB] Started")
